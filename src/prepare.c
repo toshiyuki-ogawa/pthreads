@@ -75,6 +75,39 @@ static int pthreads_apply_property_scope(zend_property_info *info TSRMLS_DC); /*
 /* {{{ prepared resource destructor */
 static void pthreads_prepared_resource_dtor(zend_rsrc_list_entry *entry); /* }}} */
 
+
+#if SUHOSIN_PATCH
+/* {{{ proto void pthreads_register_dtor(dtor_t func)
+   register destructor in zend_hash */
+static void pthreads_register_dtor(dtor_func_t func);
+/* }}} */
+/* {{{ proto dtor_func_t pthreads_get_prepared_resource_dtor() 
+   return pthreads_prepared_resource_dtor */
+static dtor_func_t pthreads_get_prepared_resource_dtor();
+/* }}} */
+/* {{{ proto dtor_func_t pthreads_get_preparation_property_info_copy_dtor() 
+   return pthreads_preparation_property_info_copy_dtor */
+static dtor_func_t pthreads_get_preparation_property_info_copy_dtor();
+/* }}} */
+
+/* {{{ proto dtor_func_t pthreads_get_preparation_property_info_dummy_dtor() 
+   return pthreads_preparation_property_info_dummy_dtor */
+static dtor_func_t pthreads_get_preparation_property_info_dummy_dtor();
+/* }}} */
+
+#else
+
+#define pthreads_get_prepared_resource_dtor() pthreads_prepared_resource_dtor
+
+#define pthreads_get_preparation_property_info_copy_dtor() \
+  pthreads_preparation_property_info_copy_dtor
+
+#define pthreads_get_preparation_property_info_dummy_dtor() \
+  pthreads_preparation_property_info_dummy_dtor
+#endif
+
+
+
 static zend_class_entry* pthreads_copy_entry(PTHREAD thread, zend_class_entry *candidate TSRMLS_DC) {
     zval *tz;
 	zend_function *tf;
@@ -238,12 +271,12 @@ while(0)
 	    zend_hash_copy(
 	        &prepared->properties_info,
 	        &candidate->properties_info, (copy_ctor_func_t) pthreads_preparation_property_info_copy_ctor, &ti, sizeof(zend_property_info));
-	    prepared->properties_info.pDestructor = (dtor_func_t) pthreads_preparation_property_info_copy_dtor;
+	    prepared->properties_info.pDestructor = pthreads_get_preparation_property_info_copy_dtor();
 	} else {
 	    zend_hash_copy(
 	        &prepared->properties_info,
 	        &candidate->properties_info, (copy_ctor_func_t) pthreads_preparation_property_info_dummy_ctor, &ti, sizeof(zend_property_info));
-	    prepared->properties_info.pDestructor = (dtor_func_t) pthreads_preparation_property_info_dummy_dtor;
+	    prepared->properties_info.pDestructor = pthreads_get_preparation_property_info_dummy_dtor();
 	}
 	
 	/* copy statics and defaults */
@@ -639,7 +672,7 @@ int pthreads_prepare(PTHREAD thread TSRMLS_DC){
 	/* set sensible resource destructor */
 	if (!PTHREADS_G(default_resource_dtor))
 		PTHREADS_G(default_resource_dtor)=(EG(regular_list).pDestructor);
-	EG(regular_list).pDestructor =  (dtor_func_t) pthreads_prepared_resource_dtor;	
+	EG(regular_list).pDestructor =  pthreads_get_prepared_resource_dtor();	
 	
 	return SUCCESS;
 } /* }}} */
@@ -789,4 +822,61 @@ static void pthreads_prepared_resource_dtor(zend_rsrc_list_entry *entry) {
 
 #endif
 
+
+#if SUHOSIN_PATCH
+
+/* {{{ proto void pthreads_register_dtor(dtor_t func)
+   register destructor in zend_hash */
+static void pthreads_register_dtor(dtor_func_t func)
+{
+	HashTable ht;
+	/* register destroctor only */
+	zend_hash_init(&ht, 0, NULL, func, 0);
+
+	zend_hash_destroy(&ht);
+}
+/* }}} */
+
+/* {{{ proto dtor_func_t pthreads_get_prepared_resource_dtor() 
+   return pthreads_prepared_resource_dtor */
+static dtor_func_t pthreads_get_prepared_resource_dtor()
+{
+	static dtor_func_t func;
+	if (!func)
+	{
+		pthreads_register_dtor(pthreads_prepared_resource_dtor);
+		func = pthreads_prepared_resource_dtor;
+	}
+	return func;
+}
+/* }}} */
+
+/* {{{ proto dtor_func_t pthreads_get_preparation_property_info_copy_dtor() 
+   return pthreads_preparation_property_info_copy_dtor */
+static dtor_func_t pthreads_get_preparation_property_info_copy_dtor()
+{
+	static dtor_func_t func;
+	if (!func)
+	{
+		pthreads_register_dtor(pthreads_preparation_property_info_copy_dtor);
+		func = pthreads_preparation_property_info_copy_dtor;
+	}
+	return func;
+}
+/* }}} */
+
+/* {{{ proto dtor_func_t pthreads_get_preparation_property_info_dummy_dtor() 
+   return pthreads_preparation_property_info_dummy_dtor */
+static dtor_func_t pthreads_get_preparation_property_info_dummy_dtor()
+{
+	static dtor_func_t func;
+	if (!func)
+	{
+		pthreads_register_dtor(pthreads_preparation_property_info_dummy_dtor);
+		func = pthreads_preparation_property_info_dummy_dtor;
+	}
+	return func;
+}
+/* }}} */
+#endif
 
